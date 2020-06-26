@@ -1,0 +1,194 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: wildfly
+    annotations:
+      openshift.io/display-name: "WildFly S2I"
+  spec:
+    tags:
+    - name: latest
+      annotations:
+        description: wildfly-builder image stream
+        iconClass: icon-wildfly
+        tags: builder,java,widlfly,galleon
+        sampleRepo: https://github.com/openshift/openshift-jee-sample.git
+        version: 'latest'
+      from:
+        kind: DockerImage
+        name: "quay.io/wildfly/wildfly-centos7:latest"
+    - name: "20.0"
+      annotations:
+        description: wildfly-builder image stream
+        iconClass: icon-wildfly
+        tags: builder,java,widlfly,galleon
+        sampleRepo: https://github.com/openshift/openshift-jee-sample.git
+        version: '20.0'
+      from:
+        kind: DockerImage
+        name: "quay.io/wildfly/wildfly-centos7:20.0"
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: wildfly-runtime
+  spec:
+    tags:
+    - name: latest
+      annotations:
+        description: wildfly-runtime image stream
+        iconClass: icon-wildfly
+        tags: java,widlfly
+        version: 'latest'
+      from:
+        kind: DockerImage
+        name: "quay.io/wildfly/wildfly-runtime-centos7:latest"
+    - name: "20.0"
+      annotations:
+        description: wildfly-runtime image stream
+        iconClass: icon-wildfly
+        tags: java,widlfly
+        version: '20.0'
+      from:
+        kind: DockerImage
+        name: "quay.io/wildfly/wildfly-runtime-centos7:20.0"
+- apiVersion: v1
+  kind: Template
+  metadata:
+    name: wildfly-s2i-build
+    annotations:
+      iconClass: icon-wildfly
+      openshift.io/display-name: Template for WildFly S2I Build
+      openshift.io/provider-display-name: Red Hat, Inc.
+      template.openshift.io/long-description: S2I build of WildFly application (<app-name>-build-artifacts image) followed by a build to create a lightweight application image (<app-name> image). <app-name> image can then be managed by the WildFly Operator.
+      description: S2I build of WildFly application (<app-name>-build-artifacts image) followed by a build to create a lightweight application image (<app-name> image). <app-name> image can then be managed by the WildFly Operator.
+    message: Builds created.
+  labels:
+    template: wildfly-s2i-build
+  parameters:
+  - name: IMAGE_NAME
+    description: The name of the application image
+    displayName: Application Image Name
+    required: true
+  - name: GIT_REPO
+    description: The application Git repository
+    displayName: Git repository
+    required: true
+    value: https://github.com/openshift/openshift-jee-sample.git
+  - name: GIT_CONTEXT_DIR
+    description: The application Git repository sub directory
+    displayName: Git repository sub directory
+    required: false
+  - name: GIT_BRANCH
+    description: The application Git branch
+    displayName: Git branch
+    required: false
+  - name: WILDFLY_IMAGE
+    description: ImageStream Tag for the WildFly builder image
+    displayName: WildFly Builder Image
+    required: true
+    value: wildfly:latest
+  - name: WILDFLY_RUNTIME_IMAGE
+    description: ImageStream Tag for the WildFly runtime image
+    displayName: WildFly Runtime Image
+    required: true
+    value: wildfly-runtime:latest
+  - name: WILDFLY_IMAGE_STREAM_NAMESPACE
+    description: Namespace in which the ImageStreams for WildFly images are installed. These ImageStreams are normally installed in the openshift namespace. You should only need to modify this if you've installed the ImageStreams in a different namespace/project.
+    displayName: ImageStreams Namespace
+    required: true
+    value: openshift
+  - name: GALLEON_PROVISION_LAYERS
+    description: A comma separated lists of galleon layers to provision. The main layers are cloud-server, jaxrs-server and datasources-web-server. You can check documentation to get more details on layers.
+    displayName: List of Galleon layers.
+    required: false
+  objects:
+  - apiVersion: v1
+    kind: ImageStream
+    metadata:
+      labels:
+        app: ${IMAGE_NAME}
+      name: ${IMAGE_NAME}
+  - apiVersion: v1
+    kind: ImageStream
+    metadata:
+      labels:
+        app: ${IMAGE_NAME}-build-artifacts
+      name: ${IMAGE_NAME}-build-artifacts
+  - apiVersion: v1
+    kind: BuildConfig
+    metadata:
+      labels:
+        app: ${IMAGE_NAME}-build-artifacts
+      name: ${IMAGE_NAME}-build-artifacts
+    spec:
+      output:
+        to:
+          kind: ImageStreamTag
+          name: ${IMAGE_NAME}-build-artifacts:latest
+      runPolicy: Serial
+      source:
+        git:
+          ref: ${GIT_BRANCH}
+          uri: ${GIT_REPO}
+        contextDir: ${GIT_CONTEXT_DIR}
+        type: Git
+      strategy:
+        sourceStrategy:
+          from:
+            kind: ImageStreamTag
+            name: ${WILDFLY_IMAGE}
+            namespace: ${WILDFLY_IMAGE_STREAM_NAMESPACE}
+          env:
+            - name: "GALLEON_PROVISION_LAYERS"
+              value: ${GALLEON_PROVISION_LAYERS}
+            - name: "GALLEON_PROVISION_DEFAULT_FAT_SERVER"
+              value: "true"
+        type: Source
+      triggers:
+      - imageChange:
+        type: ImageChange
+      - type: ConfigChange
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      labels:
+        app: ${IMAGE_NAME}
+      name: ${IMAGE_NAME}
+    spec:
+      output:
+        to:
+          kind: ImageStreamTag
+          name: ${IMAGE_NAME}:latest
+      source:
+        dockerfile: |-
+          FROM ${WILDFLY_RUNTIME_IMAGE}
+          COPY /server $JBOSS_HOME
+          USER root
+          RUN chown -R jboss:root $JBOSS_HOME && chmod -R ug+rwX $JBOSS_HOME
+          RUN ln -s $JBOSS_HOME /wildfly 
+          USER jboss
+          CMD $JBOSS_HOME/bin/openshift-launch.sh
+        images:
+          - from: 
+              kind: ImageStreamTag
+              name: ${IMAGE_NAME}-build-artifacts:latest
+            paths: 
+            - sourcePath: /s2i-output/server/
+              destinationDir: "."
+      strategy:
+        dockerStrategy:
+          imageOptimizationPolicy: SkipLayers
+          from:
+            kind: ImageStreamTag
+            name: ${WILDFLY_RUNTIME_IMAGE}
+            namespace: ${WILDFLY_IMAGE_STREAM_NAMESPACE}
+        type: Docker
+      triggers:
+      - type: ImageChange
+        imageChange:
+          from:
+            kind: ImageStreamTag
+            name: ${IMAGE_NAME}-build-artifacts:latest
+      - type: ConfigChange
