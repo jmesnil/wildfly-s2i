@@ -39,5 +39,5 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ env.REGISTRY_USER }}
           password: ${{ env.REGISTRY_PASSWORD }}
-      - name: Build and Push Image Tag
-        run: TAG=${GITHUB_REF##*/} make push
+      - name: Release tagged images on Quay.io
+        run: make release
