@@ -13,6 +13,7 @@ build:
 test:
 	$(script_env) TEST_MODE=true $(build)
 
+release: export IMAGE_VERSION := ${PUBLISHED_TAG}
 release: build
 	docker push $(DOCKER_REGISTRY)/${IMAGE_NAME}:$(PUBLISHED_TAG)
 	docker push $(DOCKER_REGISTRY)/${RUNTIME_IMAGE_NAME}:$(PUBLISHED_TAG)
