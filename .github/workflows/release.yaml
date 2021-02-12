@@ -71,4 +71,5 @@ jobs:
           username: ${{ env.REGISTRY_USER }}
           password: ${{ env.REGISTRY_PASSWORD }}
       - name: Push tagged images on Quay.io
+        if: github.ref != 'refs/heads/master'
         run: make push
