@@ -32,12 +32,29 @@ jobs:
         with:
           # Version of CEKit to install
           version: 3.2.1
-      # Runs a single command using the runners shell
+      - name: Build
+        run: |
+          make build
+          docker image ls
+      - name: Behave Tests
+        run: |
+          pushd wildfly-builder-image
+          cekit -v test behave --steps-url https://github.com/luck3y/behave-test-steps.git
+          popd
+      - name: Additional Tests
+        run: |
+          export IMAGE_VERSION=dev
+          export NAMESPACE=wildfly
+          export PLATFORM=centos7
+          export IMAGE_NAME=${NAMESPACE}/wildfly-${PLATFORM}
+          export RUNTIME_IMAGE_NAME=${NAMESPACE}/wildfly-runtime-${PLATFORM}
+          . ~/cekit${{ env.CEKIT_VERSION }}/bin/activate
+          ./test/run
       - name: Docker Login to Quay.io (master only)
         uses: docker/login-action@v1.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ env.REGISTRY_USER }}
           password: ${{ env.REGISTRY_PASSWORD }}
-      - name: Release tagged images on Quay.io
-        run: make release
+      - name: Push tagged images on Quay.io
+        run: make push
