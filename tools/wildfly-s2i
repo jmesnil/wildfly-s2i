@@ -1,0 +1,172 @@
+#!/bin/bash
+
+################################################
+# Build an Application Image using WildFly S2I #
+################################################
+
+echo " _       ___ __    __________         ________   ____";
+echo "| |     / (_) /___/ / ____/ /_  __   / ___/__ \ /  _/";
+echo "| | /| / / / / __  / /_  / / / / /   \__ \__/ / / /  ";
+echo "| |/ |/ / / / /_/ / __/ / / /_/ /   ___/ / __/_/ /   ";
+echo "|__/|__/_/_/\__,_/_/   /_/\__, /   /____/____/___/   ";
+echo "                         /____/                      ";
+echo
+echo
+
+check_prerequisites() {
+  docker version > /dev/null 2>&1
+  if [[ $? -ne 0 ]]; then
+    echo "The \"docker\" command is required to run the wildfly-s2i script"
+    exit 1;
+  fi
+
+  s2i version > /dev/null 2>&1
+  if [[ $? -ne 0 ]]; then
+    echo "The \"s2i\" command is required to run the wildfly-s2i script"
+    exit 1;
+  fi
+}
+
+help() {
+  cli_name=${0##*/}
+  echo "
+$cli_name is a script to build application image using WildFly Source-to-Image (S2I).
+
+It requires the \"docker\" and \"s2i\" commands to build the image.
+
+Usage:
+
+  $cli_name build [<WildFly parameters>] <image name> <source location> [<s2i parameters>]
+
+Where
+  * <WildFly parameters> are:
+      -v <WildFly S2I tag>
+        If omitted, the latest WildFly S2I images are used.
+      -l <Galleon Layers>
+        A list of comma-separated Galleon Layers to provision
+      -f <Galleon Feature Packs>
+        A list of comma-separated Galleon Feature Packs used for provisioning.
+        Each feature pack is referenced by a Maven GAV coordinate
+      -g <Galleon Directory>
+        A directory containing Galleon configuration
+      -d
+        Display debug logs
+  * <image name>
+    The name of the application image
+  * <source location>
+    The location of the application source (can be a local directory or a Git repository URL)
+  * <s2i parameters>
+    Any additional parameters to pass to the \"s2i build\" command as documented in
+    https://github.com/openshift/source-to-image/blob/master/docs/cli.md#s2i-build
+"
+  exit 1
+}
+
+build_artifacts_image() {
+  echo "Building artifact image ${build_artifacts_image}..."
+
+
+  S2I_ARGS=" -e GALLEON_PROVISION_DEFAULT_FAT_SERVER=true"
+
+  if [ "x$GALLEON_LAYERS" != "x" ]; then
+    echo "   Galleon Layers: ${GALLEON_LAYERS}"
+    S2I_ARGS="$S2I_ARGS -e GALLEON_PROVISION_LAYERS=${GALLEON_LAYERS}"
+  fi
+  if [ "x$FEATURE_PACKS" != "x" ]; then
+    echo "   Galleon Feature Packs: ${FEATURE_PACKS}"
+    S2I_ARGS="$S2I_ARGS -e GALLEON_PROVISION_FEATURE_PACKS=${FEATURE_PACKS}"
+  fi
+  if [ "x$GALLEON_DIR" != "x" ]; then
+    echo "   Galleon Directory: ${GALLEON_DIR}"
+    S2I_ARGS="$S2I_ARGS -e GALLEON_DIR=${GALLEON_DIR}"
+  fi
+
+  s2i build $source \
+    ${builder_image} \
+    ${build_artifacts_image} \
+    $S2I_ARGS $@
+  
+  echo "${build_artifacts_image} image is built"
+}
+
+build_runtime_image() {
+  echo "Building application image ${application_image}..."
+  docker_dir=$(mktemp -d)
+  docker_file=$docker_dir/Dockerfile
+  cat <<EOF > $docker_file
+FROM ${runtime_image}
+COPY --from=${build_artifacts_image}:latest /s2i-output/server \$JBOSS_HOME
+USER root
+RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
+RUN ln -s \$JBOSS_HOME /wildfly
+USER jboss
+CMD \$JBOSS_HOME/bin/openshift-launch.sh
+EOF
+  docker build -t $application_image $docker_dir
+  ret=$?
+  rm -rf $docker_dir
+
+  if [[ $ret -eq 0 ]]; then
+    echo "${application_image} image is built"
+    echo
+    echo "You can run if from Docker with:"
+    echo "   docker run -p8080:8080 ${application_image}"
+    echo
+  fi
+  return $ret
+}
+
+case "$1" in
+  build)
+    shift
+
+    check_prerequisites
+    
+    while getopts "v:l:f:g:d" OPTION; do
+    case $OPTION in
+    v)
+        VERSION=$OPTARG
+        ;;
+    l)
+        GALLEON_LAYERS=$OPTARG
+        ;;
+    f)
+        FEATURE_PACKS=$OPTARG
+        ;;
+    g)
+        GALLEON_DIR=$OPTARG
+        ;;
+    d)
+        set -x
+        ;;
+    *)
+        echo "Incorrect options provided"
+        exit 1
+        ;;
+    esac
+    done
+    shift $((OPTIND-1))
+
+    if [ "x$VERSION" = "x" ]; then
+        VERSION="latest"
+    fi
+    
+    echo "Building with $VERSION images for WildFly S2I"
+
+    builder_image=quay.io/wildfly/wildfly-centos7:${VERSION}
+    runtime_image=quay.io/wildfly/wildfly-runtime-centos7:${VERSION}
+    application_image=$1
+    build_artifacts_image=${application_image}-build-artifacts
+    source=$2
+    shift 2
+
+    # build the artifacts image using S2I
+    build_artifacts_image $@
+    # build the application image from the WildFly S2I runtime image
+    # and copy in it the artifacts
+    build_runtime_image 
+    ;;
+  *)
+    help
+    ;;
+esac
