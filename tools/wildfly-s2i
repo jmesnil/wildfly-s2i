@@ -95,9 +95,8 @@ build_runtime_image() {
   docker_file=$docker_dir/Dockerfile
   cat <<EOF > $docker_file
 FROM ${runtime_image}
-COPY --from=${build_artifacts_image}:latest /s2i-output/server \$JBOSS_HOME
 USER root
-RUN chown -R jboss:root \$JBOSS_HOME && chmod -R ug+rwX \$JBOSS_HOME
+COPY --from=${build_artifacts_image}:latest --chown=jboss:root /s2i-output/server \$JBOSS_HOME
 RUN ln -s \$JBOSS_HOME /wildfly
 USER jboss
 CMD \$JBOSS_HOME/bin/openshift-launch.sh
