@@ -49,6 +49,8 @@ Where
         Each feature pack is referenced by a Maven GAV coordinate
       -g <Galleon Directory>
         A directory containing Galleon configuration
+      -k
+        Do not build the application image from WildFly S2I runtime image
       -d
         Display debug logs
   * <image name>
@@ -63,7 +65,7 @@ Where
 }
 
 build_artifacts_image() {
-  echo "Building artifact image ${build_artifacts_image}..."
+  echo "Building image ${build_artifacts_image}..."
 
 
   S2I_ARGS=" -e GALLEON_PROVISION_DEFAULT_FAT_SERVER=true"
@@ -121,7 +123,7 @@ case "$1" in
 
     check_prerequisites
     
-    while getopts "v:l:f:g:d" OPTION; do
+    while getopts "v:l:f:g:dk" OPTION; do
     case $OPTION in
     v)
         VERSION=$OPTARG
@@ -137,6 +139,9 @@ case "$1" in
         ;;
     d)
         set -x
+        ;;
+    k)
+        SKIP_RUNTIME_IMAGE=1
         ;;
     *)
         echo "Incorrect options provided"
@@ -156,14 +161,23 @@ case "$1" in
     runtime_image=quay.io/wildfly/wildfly-runtime-centos7:${VERSION}
     application_image=$1
     build_artifacts_image=${application_image}-build-artifacts
+    if [ "x$SKIP_RUNTIME_IMAGE" != "x" ]; then
+      # the image built by WildFly S2I Builder is the application image
+      build_artifacts_image=$1
+    fi
+
     source=$2
     shift 2
 
     # build the artifacts image using S2I
     build_artifacts_image $@
-    # build the application image from the WildFly S2I runtime image
-    # and copy in it the artifacts
-    build_runtime_image 
+
+    if [ "x$SKIP_RUNTIME_IMAGE" == "x" ]; then
+      # build the application image from the WildFly S2I runtime image
+      # and copy in it the artifacts
+      build_runtime_image
+    fi
+
     ;;
   *)
     help
