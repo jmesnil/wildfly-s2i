@@ -1,5 +1,6 @@
 name: Wildfly s2i Image Deployment when a new version tag is created.
 on:
+  workflow_dispatch: {}
   push:
     branches:
       - "!*"
