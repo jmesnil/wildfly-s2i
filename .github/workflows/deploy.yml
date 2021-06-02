@@ -1,5 +1,7 @@
 name: Wildfly s2i Image Deployment
-on: ['deployment']
+on:
+   workflow_dispatch: {} 
+   deployment: {}
 env:
   LANG: en_US.UTF-8
   S2I_URI: https://api.github.com/repos/openshift/source-to-image/releases/latest
