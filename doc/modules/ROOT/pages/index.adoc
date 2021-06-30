@@ -1,0 +1,17 @@
+= Source-to-image (S2I) for WildFly
+
+This guide describes how to build a container image from your Java application using Source-to-Image (S2I) with WildFly
+
+This requires the use of the new `<server>` mode from the `wildfly-jar-plugin` Maven plugin.
+
+== Introduction
+
+TODO
+
+== Binary Build
+
+TODO
+
+== Build from a local WildFly snapshot
+
+TODO

@@ -1,0 +1,4 @@
+name: wildfly-s2i
+title: Source-to-Image (S2I) for WildFly
+version: master
+start_page: index.adoc
